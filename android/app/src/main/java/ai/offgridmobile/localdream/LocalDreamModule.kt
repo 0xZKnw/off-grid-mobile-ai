@@ -207,6 +207,7 @@ class LocalDreamModule(reactContext: ReactApplicationContext) :
         internal fun isExynosDevice(): Boolean {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false
             return Build.SOC_MODEL.uppercase().startsWith("S5E")
+        }
     }
 
     private var serverProcess: Process? = null
