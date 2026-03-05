@@ -86,9 +86,10 @@ export async function cleanupMMProjEntries(modelsDir: string): Promise<number> {
   return removedCount;
 }
 
-function detectBackend(dirName: string): 'mnn' | 'qnn' | 'coreml' {
+function detectBackend(dirName: string): 'mnn' | 'qnn' | 'coreml' | 'opencl' {
   if (dirName.includes('qnn') || dirName.includes('8gen')) return 'qnn';
   if (dirName.includes('coreml')) return 'coreml';
+  if (dirName.includes('opencl') || dirName.includes('mali') || dirName.includes('exynos')) return 'opencl';
   return 'mnn';
 }
 

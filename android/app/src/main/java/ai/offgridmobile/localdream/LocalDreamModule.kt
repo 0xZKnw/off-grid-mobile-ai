@@ -193,8 +193,20 @@ class LocalDreamModule(reactContext: ReactApplicationContext) :
             env["DSP_LIBRARY_PATH"] = runtimeDir.absolutePath
             env["ADSP_LIBRARY_PATH"] = runtimeDir.absolutePath
 
+            // Exynos 2400 (S5E9945) big.LITTLE: 1xCortex-X4 + 3xA720 + 4xA520.
+            // Pin MNN to 4 performance cores to avoid scheduling onto A520 efficiency
+            // cores which degrades image generation throughput significantly.
+            if (isExynosDevice()) {
+                env["MNN_NUM_THREADS"] = "4"
+                Log.d(TAG, "Exynos detected: setting MNN_NUM_THREADS=4 (performance cores only)")
+            }
+
             return env
         }
+
+        internal fun isExynosDevice(): Boolean {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false
+            return Build.SOC_MODEL.uppercase().startsWith("S5E")
     }
 
     private var serverProcess: Process? = null

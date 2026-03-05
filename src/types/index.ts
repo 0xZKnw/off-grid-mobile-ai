@@ -91,17 +91,21 @@ export interface SoCInfo {
   vendor: SoCVendor;
   hasNPU: boolean;
   qnnVariant?: '8gen2' | '8gen1' | 'min';
+  /** Samsung Exynos NPU variant — identifies the chip generation */
+  exynosVariant?: 'exynos2400' | 'exynos2200' | 'exynos2100';
+  /** Samsung Exynos GPU tier for OpenCL acceleration */
+  exynosGpuTier?: 'mali-g720' | 'mali-g615' | 'unknown';
   appleChip?: 'A14' | 'A15' | 'A16' | 'A17Pro' | 'A18';
 }
 
 export interface ImageModelRecommendation {
-  recommendedBackend: 'qnn' | 'mnn' | 'coreml' | 'all';
+  recommendedBackend: 'qnn' | 'mnn' | 'coreml' | 'opencl' | 'all';
   qnnVariant?: '8gen2' | '8gen1' | 'min';
   /** Substrings matched against model name to identify recommended models */
   recommendedModels?: string[];
   bannerText: string;
   warning?: string;
-  compatibleBackends: Array<'mnn' | 'qnn' | 'coreml'>;
+  compatibleBackends: Array<'mnn' | 'qnn' | 'coreml' | 'opencl'>;
 }
 
 // Hardware-related types
@@ -139,28 +143,17 @@ export interface MediaAttachment {
 
 // Generation metadata - details about how a message was generated
 export interface GenerationMeta {
-  /** Whether GPU was used for inference */
-  gpu: boolean;
-  /** GPU backend name (e.g., 'Metal', 'CPU') */
-  gpuBackend?: string;
-  /** Number of GPU layers offloaded */
-  gpuLayers?: number;
-  /** Model name used for generation */
-  modelName?: string;
-  /** Tokens per second — overall including prefill (text generation only) */
-  tokensPerSecond?: number;
-  /** Tokens per second — decode only, excluding prefill (text generation only) */
-  decodeTokensPerSecond?: number;
-  /** Time to first token in seconds (text generation only) */
-  timeToFirstToken?: number;
-  /** Token count (text generation only) */
-  tokenCount?: number;
-  /** Image generation steps */
-  steps?: number;
-  /** Image guidance scale */
-  guidanceScale?: number;
-  /** Image resolution */
-  resolution?: string;
+  gpu: boolean; /** Whether GPU was used for inference */
+  gpuBackend?: string; /** GPU backend name (e.g., 'Metal', 'CPU') */
+  gpuLayers?: number; /** Number of GPU layers offloaded */
+  modelName?: string; /** Model name used for generation */
+  tokensPerSecond?: number; /** Tokens per second — overall including prefill (text generation only) */
+  decodeTokensPerSecond?: number; /** Decode-only tok/s, excluding prefill (text generation only) */
+  timeToFirstToken?: number; /** Time to first token in seconds (text generation only) */
+  tokenCount?: number; /** Token count (text generation only) */
+  steps?: number; /** Image generation steps */
+  guidanceScale?: number; /** Image guidance scale */
+  resolution?: string; /** Image resolution */
   cacheType?: string; // KV cache quantization type
 }
 
@@ -263,7 +256,7 @@ export interface ONNXImageModel {
   downloadedAt: string;
   size: number; // Total size of all model files in bytes
   style?: string; // e.g., 'creative', 'photorealistic', 'anime'
-  backend?: 'mnn' | 'qnn' | 'coreml'; // 'mnn' for CPU, 'qnn' for Qualcomm NPU, 'coreml' for Apple Core ML
+  backend?: 'mnn' | 'qnn' | 'coreml' | 'opencl'; // 'mnn' for CPU, 'qnn' for Qualcomm NPU, 'coreml' for Apple Core ML, 'opencl' for Mali GPU
 }
 
 // Image generation state for UI

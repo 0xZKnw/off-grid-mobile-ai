@@ -91,9 +91,15 @@ function buildImageGenMeta(
   opts: { steps: number; guidanceScale: number; result: GeneratedImage },
 ): GenerationMeta {
   const backend = model.backend ?? 'mnn';
-  const gpuBackend = Platform.OS === 'ios' ? 'Core ML (ANE)' : backend === 'qnn' ? 'QNN (NPU)' : 'MNN (CPU)';
+  const gpuBackend = Platform.OS === 'ios'
+    ? 'Core ML (ANE)'
+    : backend === 'qnn'
+    ? 'QNN (NPU)'
+    : backend === 'opencl'
+    ? 'OpenCL (Mali GPU)'
+    : 'MNN (CPU)';
   return {
-    gpu: Platform.OS === 'ios' ? true : backend === 'qnn',
+    gpu: Platform.OS === 'ios' ? true : backend === 'qnn' || backend === 'opencl',
     gpuBackend,
     modelName: model.name,
     steps: opts.steps,
@@ -102,10 +108,7 @@ function buildImageGenMeta(
   };
 }
 
-// ---------------------------------------------------------------------------
 // Service class
-// ---------------------------------------------------------------------------
-
 class ImageGenerationService {
   private state: ImageGenerationState = {
     isGenerating: false, progress: null, status: null, previewPath: null,

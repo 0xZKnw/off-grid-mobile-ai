@@ -9,7 +9,8 @@ import {
   initMultimodal, checkContextMultimodal,
   recordGenerationStats,
   hashString, ensureSessionCacheDir, getSessionPath, buildModelParams,
-  buildCompletionParams, createThinkInjector, getMaxContextForDevice, getGpuLayersForDevice, BYTES_PER_GB,
+  buildCompletionParams, createThinkInjector, getMaxContextForDevice,
+  getGpuLayersForDevice, getGpuLayersForSoC, BYTES_PER_GB,
 } from './llmHelpers';
 import { hardwareService } from './hardware';
 import { formatLlamaMessages, buildOAIMessages } from './llmMessages';
@@ -49,7 +50,6 @@ class LLMService {
   private hashString(str: string): string { return hashString(str); }
   private ensureSessionCacheDir(): Promise<void> { return ensureSessionCacheDir(this.sessionCacheDir); }
   private getSessionPath(promptHash: string): string { return getSessionPath(this.sessionCacheDir, promptHash); }
-
   async loadModel(modelPath: string, mmProjPath?: string): Promise<void> {
     if (this.context && this.currentModelPath !== modelPath) await this.unloadModel();
     if (this.context && this.currentModelPath === modelPath) return;
@@ -59,7 +59,9 @@ class LLMService {
       mmProjPath = undefined;
     }
     const { settings } = useAppStore.getState();
-    const { baseParams, nThreads, nBatch, ctxLen, nGpuLayers } = buildModelParams(modelPath, settings);
+    const socInfo = await hardwareService.getSoCInfo();
+    const socGpuLayers = getGpuLayersForSoC(socInfo);
+    const { baseParams, nThreads, nBatch, ctxLen, nGpuLayers } = buildModelParams(modelPath, { ...settings, gpuLayers: socGpuLayers });
     this.currentSettings = { nThreads, nBatch, contextLength: ctxLen };
     logger.log(`[LLM] Loading model: ctx=${ctxLen}, threads=${nThreads}, batch=${nBatch}`);
     try {
@@ -243,11 +245,8 @@ class LLMService {
       this.activeCompletionPromise = null;
     }
   }
-
   /** No-op pass-through — lets llama.rn's native ctx_shift handle overflow for KV cache reuse. */
-  private async manageContextWindow(messages: Message[], _extraReserve = 0): Promise<Message[]> {
-    return messages;
-  }
+  private async manageContextWindow(messages: Message[], _extraReserve = 0): Promise<Message[]> { return messages; }
 
   /** Generate a completion with a hard token cap (used for summarization, not user-facing). */
   async generateWithMaxTokens(messages: Message[], maxTokens: number): Promise<string> {
@@ -330,7 +329,9 @@ class LLMService {
   async reloadWithSettings(modelPath: string, settings: LLMPerformanceSettings): Promise<void> {
     this.updatePerformanceSettings(settings);
     if (this.context) await this.unloadModel();
-    const { baseParams, nGpuLayers } = buildModelParams(modelPath, { ...useAppStore.getState().settings, ...settings });
+    const socInfo = await hardwareService.getSoCInfo();
+    const socGpuLayers = getGpuLayersForSoC(socInfo);
+    const { baseParams, nGpuLayers } = buildModelParams(modelPath, { ...useAppStore.getState().settings, ...settings, gpuLayers: socGpuLayers });
     logger.log(`[LLM] Reloading with threads=${settings.nThreads}, batch=${settings.nBatch}, ctx=${settings.contextLength}`);
     try {
       const { context, gpuAttemptFailed } = await initContextWithFallback(baseParams, settings.contextLength, nGpuLayers);
@@ -346,5 +347,4 @@ class LLMService {
     }
   }
 }
-
 export const llmService = new LLMService();

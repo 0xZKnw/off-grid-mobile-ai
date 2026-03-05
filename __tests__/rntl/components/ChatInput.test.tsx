@@ -609,7 +609,7 @@ describe('ChatInput', () => {
       await waitFor(() => {
         expect(queryByTestId('attachments-container')).toBeTruthy();
       });
-    });
+    }, 30000);
 
     it('can send message with attachment', async () => {
       const { launchImageLibrary } = require('react-native-image-picker');

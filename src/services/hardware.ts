@@ -18,6 +18,13 @@ import { MODEL_RECOMMENDATIONS, RECOMMENDED_MODELS } from '../constants';
 const FLAGSHIP_8GEN2 = new Set([8550, 8650, 8735, 8750, 8845, 8850]);
 const FLAGSHIP_8GEN1 = new Set([8450, 8475]);
 
+// Exynos SoC prefixes (Build.SOC_MODEL): S5E9945=Exynos2400, S5E9925=Exynos2200, S5E9840=Exynos2100
+const EXYNOS_SOC_VARIANTS: Array<{ prefix: string; variant: 'exynos2400' | 'exynos2200' | 'exynos2100' }> = [
+  { prefix: 'S5E9945', variant: 'exynos2400' },
+  { prefix: 'S5E9925', variant: 'exynos2200' },
+  { prefix: 'S5E9840', variant: 'exynos2100' },
+];
+
 class HardwareService {
   private cachedDeviceInfo: DeviceInfoType | null = null;
   private cachedSoCInfo: SoCInfo | null = null;
@@ -77,18 +84,11 @@ class HardwareService {
     return this.cachedDeviceInfo!;
   }
 
-  /**
-   * Get app-specific memory usage (more accurate for tracking model memory)
-   * Note: This is system memory, native allocations may not be fully reflected
-   */
+  /** Get app-specific memory usage (system memory; native allocations may not be fully reflected). */
   async getAppMemoryUsage(): Promise<{ used: number; available: number; total: number }> {
     const total = await DeviceInfo.getTotalMemory();
     const used = await DeviceInfo.getUsedMemory();
-    return {
-      used,
-      available: total - used,
-      total,
-    };
+    return { used, available: total - used, total };
   }
 
   getTotalMemoryGB(): number {
@@ -135,15 +135,10 @@ class HardwareService {
 
   canRunModel(parametersBillions: number, quantization: string = 'Q4_K_M'): boolean {
     const availableMemoryGB = this.getAvailableMemoryGB();
-
-    // Estimate model memory requirement
-    // Q4_K_M uses ~0.5 bytes per parameter + overhead
+    // Q4_K_M uses ~0.5 bytes per parameter + overhead; need at least 1.5x model size
     const bitsPerWeight = this.getQuantizationBits(quantization);
     const modelSizeGB = (parametersBillions * bitsPerWeight) / 8;
-
-    // Need at least 1.5x the model size for safe operation
     const requiredMemory = modelSizeGB * 1.5;
-
     return availableMemoryGB >= requiredMemory;
   }
 
@@ -166,54 +161,40 @@ class HardwareService {
       'Q8_0': 8,
       'F16': 16,
     };
-
     // Try to match quantization string
     for (const [key, value] of Object.entries(bits)) {
       if (quantization.toUpperCase().includes(key)) {
         return value;
       }
     }
-
     return 4.5; // Default to Q4_K_M
   }
 
   formatBytes(bytes: number): string {
     if (bytes === 0) return '0 B';
-
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
-
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
   }
 
-  /**
-   * Get combined model size including mmproj for vision models.
-   * Use this everywhere model size is displayed for consistency.
-   */
+  /** Returns total size of model including mmproj companion file. Use everywhere size is displayed. */
   getModelTotalSize(model: { fileSize?: number; size?: number; mmProjFileSize?: number }): number {
     const mainSize = model.fileSize || model.size || 0;
     const mmProjSize = model.mmProjFileSize || 0;
     return mainSize + mmProjSize;
   }
 
-  /**
-   * Format combined model size including mmproj.
-   * Use this everywhere model size is displayed for consistency.
-   */
+  /** Formats total model size including mmproj. Use everywhere size is displayed. */
   formatModelSize(model: { fileSize?: number; size?: number; mmProjFileSize?: number }): string {
     return this.formatBytes(this.getModelTotalSize(model));
   }
 
-  /**
-   * Get estimated RAM usage for a model (combined size * overhead multiplier).
-   */
+  /** Returns estimated RAM usage for a model (total size * overhead multiplier). */
   estimateModelRam(model: { fileSize?: number; size?: number; mmProjFileSize?: number }, multiplier: number = 1.5): number {
     return this.getModelTotalSize(model) * multiplier;
   }
 
-  /**
-   * Format estimated RAM usage for a model.
-   */
+  /** Formats estimated RAM usage for a model. */
   formatModelRam(model: { fileSize?: number; size?: number; mmProjFileSize?: number }, multiplier: number = 1.5): string {
     const ramBytes = this.estimateModelRam(model, multiplier);
     const ramGB = ramBytes / (1024 * 1024 * 1024);
@@ -232,6 +213,14 @@ class HardwareService {
     return undefined;
   }
 
+  private detectAndroidVendor(hw: string, model: string): SoCVendor {
+    if (hw.includes('qcom')) return 'qualcomm';
+    if (model.startsWith('Pixel')) return 'tensor';
+    if (hw.includes('mt') || hw.includes('mediatek')) return 'mediatek';
+    if (hw.includes('exynos') || hw.includes('samsungexynos')) return 'exynos';
+    return 'unknown';
+  }
+
   async getSoCInfo(): Promise<SoCInfo> {
     if (this.cachedSoCInfo) return this.cachedSoCInfo;
     if (Platform.OS === 'ios') {
@@ -242,14 +231,15 @@ class HardwareService {
     }
     const hardware = await DeviceInfo.getHardware();
     const model = DeviceInfo.getModel();
-    const hw = hardware.toLowerCase();
-    let vendor: SoCVendor = 'unknown';
-    if (hw.includes('qcom')) vendor = 'qualcomm';
-    else if (model.startsWith('Pixel')) vendor = 'tensor';
-    else if (hw.includes('mt') || hw.includes('mediatek')) vendor = 'mediatek';
-    else if (hw.includes('exynos') || hw.includes('samsungexynos')) vendor = 'exynos';
+    const vendor = this.detectAndroidVendor(hardware.toLowerCase(), model);
     const qnnVariant = vendor === 'qualcomm' ? await this.getQnnVariantFromSoC() : undefined;
-    this.cachedSoCInfo = { vendor, hasNPU: vendor === 'qualcomm' && !!qnnVariant, qnnVariant };
+    const exynosVariant = vendor === 'exynos' ? await this.getExynosVariantFromSoC() : undefined;
+    // Exynos Maia NPU has no public SDK — hasNPU stays false; GPU tier drives OpenCL path
+    const exynosGpuTier = exynosVariant === 'exynos2400' ? 'mali-g720'
+      : exynosVariant === 'exynos2200' ? 'mali-g615'
+      : exynosVariant ? 'unknown' as const
+      : undefined;
+    this.cachedSoCInfo = { vendor, hasNPU: vendor === 'qualcomm' && !!qnnVariant, qnnVariant, exynosVariant, exynosGpuTier };
     return this.cachedSoCInfo;
   }
 
@@ -279,6 +269,25 @@ class HardwareService {
     return 'min';
   }
 
+  private async getExynosVariantFromSoC(): Promise<'exynos2400' | 'exynos2200' | 'exynos2100' | undefined> {
+    const socModel = await this.fetchSoCModel();
+    if (!socModel) return undefined;
+    const upper = socModel.toUpperCase();
+    const match = EXYNOS_SOC_VARIANTS.find(v => upper.startsWith(v.prefix));
+    return match?.variant;
+  }
+
+  private getExynosImageRec(socInfo: SoCInfo): ImageModelRecommendation {
+    // Mali-G720 (Exynos 2400 / Galaxy S24) supports OpenCL 3.0 for LLM GPU acceleration.
+    // SD subprocess does not ship OpenCL/Vulkan — image gen stays on MNN CPU for all Exynos.
+    const label = socInfo.exynosVariant === 'exynos2400' ? 'Exynos 2400 (Mali-G720)'
+      : socInfo.exynosVariant === 'exynos2200' ? 'Exynos 2200' : 'Exynos';
+    if (socInfo.exynosGpuTier === 'mali-g720') {
+      return { recommendedBackend: 'opencl', bannerText: `${label} — GPU (OpenCL) acceleration enabled for chat`, compatibleBackends: ['opencl', 'mnn'] };
+    }
+    return { recommendedBackend: 'mnn', bannerText: `${label} — CPU models recommended`, compatibleBackends: ['mnn'] };
+  }
+
   private getIosImageRec(chip: SoCInfo['appleChip'], ramGB: number): ImageModelRecommendation {
     if ((chip === 'A17Pro' || chip === 'A18') && ramGB >= 6) {
       return { recommendedBackend: 'coreml', recommendedModels: ['sdxl', 'xl-base'], bannerText: 'All models supported \u2014 SDXL for best quality', compatibleBackends: ['coreml'] };
@@ -305,9 +314,11 @@ class HardwareService {
     } else if (socInfo.vendor === 'qualcomm' && socInfo.hasNPU) {
       rec = this.getQualcommImageRec(socInfo);
     } else if (socInfo.vendor === 'qualcomm') {
-      rec = { recommendedBackend: 'mnn', bannerText: 'CPU models recommended \u2014 your Snapdragon doesn\u2019t support NPU acceleration', compatibleBackends: ['mnn'] };
+      rec = { recommendedBackend: 'mnn', bannerText: 'CPU models recommended — your Snapdragon doesn\u2019t support NPU acceleration', compatibleBackends: ['mnn'] };
+    } else if (socInfo.vendor === 'exynos') {
+      rec = this.getExynosImageRec(socInfo);
     } else {
-      rec = { recommendedBackend: 'mnn', bannerText: 'CPU models recommended \u2014 NPU requires Snapdragon 888+', compatibleBackends: ['mnn'] };
+      rec = { recommendedBackend: 'mnn', bannerText: 'CPU models recommended — NPU requires Snapdragon 888+', compatibleBackends: ['mnn'] };
     }
     if (ramGB < 4) { rec.warning = 'Low RAM \u2014 expect slower performance'; }
     this.cachedImageRecommendation = rec;
@@ -316,7 +327,6 @@ class HardwareService {
 
   getDeviceTier(): 'low' | 'medium' | 'high' | 'flagship' {
     const ramGB = this.getTotalMemoryGB();
-
     if (ramGB < 4) return 'low';
     if (ramGB < 6) return 'medium';
     if (ramGB < 8) return 'high';

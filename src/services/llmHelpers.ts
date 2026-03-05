@@ -1,7 +1,7 @@
 import { initLlama, LlamaContext } from 'llama.rn';
 import RNFS from 'react-native-fs';
 import { APP_CONFIG } from '../constants';
-import { Message } from '../types';
+import { Message, SoCInfo } from '../types';
 import { MultimodalSupport, LLMPerformanceStats } from './llmTypes';
 
 // Reserve tokens for system prompt and response generation
@@ -281,6 +281,15 @@ export function getGpuLayersForDevice(totalMemoryBytes: number, requestedLayers:
   const totalGB = totalMemoryBytes / BYTES_PER_GB;
   if (totalGB <= 4) return 0;
   return requestedLayers;
+}
+
+/** Returns baseline GPU layer count for the detected SoC.
+ * Exynos 2400 (Mali-G720 MP12): OpenCL 3.0 — 99 layers. All other Android: CPU-only (0).
+ */
+export function getGpuLayersForSoC(socInfo: SoCInfo | null): number {
+  if (Platform.OS === 'ios') return 99;
+  if (socInfo?.vendor === 'exynos' && socInfo.exynosGpuTier === 'mali-g720') return 99;
+  return DEFAULT_GPU_LAYERS;
 }
 
 export const STOP_TOKENS = ['</s>', '<|end|>', '<|eot_id|>', '<|im_end|>', '<|im_start|>'];

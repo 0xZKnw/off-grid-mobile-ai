@@ -678,6 +678,74 @@ describe('HardwareService', () => {
         expect(soc.vendor).toBe('unknown');
         expect(soc.hasNPU).toBe(false);
       });
+
+      describe('Exynos SoC detection', () => {
+        const setupExynosWithSoC = async (socModel: string) => {
+          Platform.OS = 'android' as typeof Platform.OS;
+          NativeModules.LocalDreamModule = { getSoCModel: jest.fn().mockResolvedValue(socModel) };
+          mockedDeviceInfo.getTotalMemory.mockResolvedValue(8 * 1024 * 1024 * 1024);
+          mockedDeviceInfo.getUsedMemory.mockResolvedValue(2 * 1024 * 1024 * 1024);
+          mockedDeviceInfo.getModel.mockReturnValue('Samsung Galaxy S24');
+          mockedDeviceInfo.getSystemName.mockReturnValue('Android');
+          mockedDeviceInfo.getSystemVersion.mockReturnValue('14');
+          mockedDeviceInfo.isEmulator.mockResolvedValue(false);
+          mockedDeviceInfo.getHardware.mockResolvedValue('samsungexynos2400');
+          await hardwareService.getDeviceInfo();
+        };
+
+        afterEach(() => {
+          Platform.OS = originalOS;
+          delete NativeModules.LocalDreamModule;
+        });
+
+        it('detects exynosVariant exynos2400 for S5E9945', async () => {
+          await setupExynosWithSoC('S5E9945');
+          const soc = await hardwareService.getSoCInfo();
+          expect(soc.vendor).toBe('exynos');
+          expect(soc.exynosVariant).toBe('exynos2400');
+        });
+
+        it('detects exynosGpuTier mali-g720 for exynos2400', async () => {
+          await setupExynosWithSoC('S5E9945');
+          const soc = await hardwareService.getSoCInfo();
+          expect(soc.exynosGpuTier).toBe('mali-g720');
+        });
+
+        it('hasNPU is false for Exynos (no public NPU SDK)', async () => {
+          await setupExynosWithSoC('S5E9945');
+          const soc = await hardwareService.getSoCInfo();
+          expect(soc.hasNPU).toBe(false);
+        });
+
+        it('detects exynosVariant exynos2200 for S5E9925', async () => {
+          await setupExynosWithSoC('S5E9925');
+          const soc = await hardwareService.getSoCInfo();
+          expect(soc.exynosVariant).toBe('exynos2200');
+          expect(soc.exynosGpuTier).toBe('mali-g615');
+        });
+
+        it('detects exynosVariant exynos2100 for S5E9840', async () => {
+          await setupExynosWithSoC('S5E9840');
+          const soc = await hardwareService.getSoCInfo();
+          expect(soc.exynosVariant).toBe('exynos2100');
+          expect(soc.exynosGpuTier).toBe('unknown');
+        });
+
+        it('returns undefined exynosVariant when native module unavailable', async () => {
+          Platform.OS = 'android' as typeof Platform.OS;
+          mockedDeviceInfo.getTotalMemory.mockResolvedValue(8 * 1024 * 1024 * 1024);
+          mockedDeviceInfo.getUsedMemory.mockResolvedValue(2 * 1024 * 1024 * 1024);
+          mockedDeviceInfo.getModel.mockReturnValue('Samsung Galaxy S24');
+          mockedDeviceInfo.getSystemName.mockReturnValue('Android');
+          mockedDeviceInfo.getSystemVersion.mockReturnValue('14');
+          mockedDeviceInfo.isEmulator.mockResolvedValue(false);
+          mockedDeviceInfo.getHardware.mockResolvedValue('samsungexynos2400');
+          await hardwareService.getDeviceInfo();
+          const soc = await hardwareService.getSoCInfo();
+          expect(soc.exynosVariant).toBeUndefined();
+          expect(soc.exynosGpuTier).toBeUndefined();
+        });
+      });
     });
 
     describe('getQnnVariantFromSoC range-based detection', () => {
@@ -869,6 +937,72 @@ describe('HardwareService', () => {
         await setupDevice({ totalGB: 8, platform: 'android', hardware: 'qcom', model: 'Test' });
         const rec = await hardwareService.getImageModelRecommendation();
         expect(rec.warning).toBeUndefined();
+      });
+    });
+
+
+    describe('Android Exynos recommendations', () => {
+      const setupExynosRec = async (socModel: string) => {
+        Platform.OS = 'android' as typeof Platform.OS;
+        NativeModules.LocalDreamModule = { getSoCModel: jest.fn().mockResolvedValue(socModel) };
+        mockedDeviceInfo.getTotalMemory.mockResolvedValue(8 * 1024 * 1024 * 1024);
+        mockedDeviceInfo.getUsedMemory.mockResolvedValue(2 * 1024 * 1024 * 1024);
+        mockedDeviceInfo.getModel.mockReturnValue('Samsung Galaxy S24');
+        mockedDeviceInfo.getSystemName.mockReturnValue('Android');
+        mockedDeviceInfo.getSystemVersion.mockReturnValue('14');
+        mockedDeviceInfo.isEmulator.mockResolvedValue(false);
+        mockedDeviceInfo.getHardware.mockResolvedValue('samsungexynos2400');
+        await hardwareService.getDeviceInfo();
+      };
+
+      afterEach(() => {
+        Platform.OS = originalOS;
+        delete NativeModules.LocalDreamModule;
+      });
+
+      it('recommends opencl backend for Exynos 2400 (Mali-G720)', async () => {
+        await setupExynosRec('S5E9945');
+        const rec = await hardwareService.getImageModelRecommendation();
+        expect(rec.recommendedBackend).toBe('opencl');
+        expect(rec.compatibleBackends).toEqual(expect.arrayContaining(['opencl', 'mnn']));
+      });
+
+      it('bannerText mentions Exynos 2400 and OpenCL for S5E9945', async () => {
+        await setupExynosRec('S5E9945');
+        const rec = await hardwareService.getImageModelRecommendation();
+        expect(rec.bannerText).toContain('Exynos 2400');
+        expect(rec.bannerText).toContain('OpenCL');
+      });
+
+      it('recommends mnn for Exynos 2200 (Mali-G615)', async () => {
+        Platform.OS = 'android' as typeof Platform.OS;
+        NativeModules.LocalDreamModule = { getSoCModel: jest.fn().mockResolvedValue('S5E9925') };
+        mockedDeviceInfo.getTotalMemory.mockResolvedValue(8 * 1024 * 1024 * 1024);
+        mockedDeviceInfo.getUsedMemory.mockResolvedValue(2 * 1024 * 1024 * 1024);
+        mockedDeviceInfo.getModel.mockReturnValue('Samsung Galaxy S22');
+        mockedDeviceInfo.getSystemName.mockReturnValue('Android');
+        mockedDeviceInfo.getSystemVersion.mockReturnValue('14');
+        mockedDeviceInfo.isEmulator.mockResolvedValue(false);
+        mockedDeviceInfo.getHardware.mockResolvedValue('samsungexynos2200');
+        await hardwareService.getDeviceInfo();
+        const rec = await hardwareService.getImageModelRecommendation();
+        expect(rec.recommendedBackend).toBe('mnn');
+        expect(rec.bannerText).toContain('Exynos 2200');
+      });
+
+      it('recommends mnn for Exynos without native module', async () => {
+        Platform.OS = 'android' as typeof Platform.OS;
+        mockedDeviceInfo.getTotalMemory.mockResolvedValue(8 * 1024 * 1024 * 1024);
+        mockedDeviceInfo.getUsedMemory.mockResolvedValue(2 * 1024 * 1024 * 1024);
+        mockedDeviceInfo.getModel.mockReturnValue('Samsung Galaxy S22');
+        mockedDeviceInfo.getSystemName.mockReturnValue('Android');
+        mockedDeviceInfo.getSystemVersion.mockReturnValue('14');
+        mockedDeviceInfo.isEmulator.mockResolvedValue(false);
+        mockedDeviceInfo.getHardware.mockResolvedValue('samsungexynos2200');
+        await hardwareService.getDeviceInfo();
+        const rec = await hardwareService.getImageModelRecommendation();
+        expect(rec.recommendedBackend).toBe('mnn');
+        expect(rec.compatibleBackends).toEqual(['mnn']);
       });
     });
 
