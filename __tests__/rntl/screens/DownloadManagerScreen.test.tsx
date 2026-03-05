@@ -1317,6 +1317,24 @@ describe('DownloadManagerScreen', () => {
     expect(getByText('Core ML')).toBeTruthy();
   });
 
+  it('extractQuantization returns "Exynos NPU" for exynos filename', () => {
+    const state = createDefaultState({
+      downloadProgress: {
+        'author/model-id/model-exynos-npu.zip': {
+          progress: 0.4,
+          bytesDownloaded: 400,
+          totalBytes: 1000,
+        },
+      },
+    });
+    mockUseAppStore.mockImplementation((selector?: any) => {
+      return selector ? selector(state) : state;
+    });
+
+    const { getByText } = render(<DownloadManagerScreen />);
+    expect(getByText('Exynos NPU')).toBeTruthy();
+  });
+
   it('extractQuantization returns quantization via regex fallback for non-standard pattern (covers lines 561-562)', () => {
     // A filename like 'model-f16.gguf' matches the regex /[QqFf]\d+[_]?[KkMmSs]*/
     // but does not match any of the listed patterns, so uses the regex fallback

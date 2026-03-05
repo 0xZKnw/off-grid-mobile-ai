@@ -1,12 +1,13 @@
 package ai.offgridmobile
 
 import android.app.Application
+import ai.offgridmobile.download.DownloadManagerPackage
+import ai.offgridmobile.exynos.ExynosNpuDiffusionPackage
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
-import ai.offgridmobile.download.DownloadManagerPackage
 import ai.offgridmobile.localdream.LocalDreamPackage
 import ai.offgridmobile.pdf.PDFExtractorPackage
 
@@ -19,6 +20,7 @@ class MainApplication : Application(), ReactApplication {
         PackageList(this).packages.apply {
           // Packages that cannot be autolinked yet can be added manually here, for example:
           add(DownloadManagerPackage())
+          add(ExynosNpuDiffusionPackage())
           add(LocalDreamPackage())
           add(PDFExtractorPackage())
         },

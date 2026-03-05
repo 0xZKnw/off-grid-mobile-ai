@@ -372,6 +372,22 @@ describe('imageDownloadActions', () => {
       );
     });
 
+    it('preserves backend metadata for zip downloads', async () => {
+      const deps = makeDeps();
+      const model = makeZipModelInfo({ backend: 'one' });
+
+      await proceedWithDownload(model, deps);
+      await mockOnCompleteCallbacks[0]();
+
+      expect(mockAddDownloadedImageModel).toHaveBeenCalledWith(
+        expect.objectContaining({ backend: 'one' }),
+      );
+      expect(deps.setBackgroundDownload).toHaveBeenCalledWith(
+        42,
+        expect.objectContaining({ quantization: 'Exynos NPU', imageModelBackend: 'one' }),
+      );
+    });
+
     it('handles zip download error callback', async () => {
       const deps = makeDeps();
       const model = makeZipModelInfo();

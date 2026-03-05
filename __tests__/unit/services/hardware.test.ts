@@ -15,6 +15,7 @@ describe('HardwareService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     delete NativeModules.LocalDreamModule;
+    delete NativeModules.ExynosNpuDiffusionModule;
     // Reset cached device info between tests
     (hardwareService as any).cachedDeviceInfo = null;
     (hardwareService as any).cachedSoCInfo = null;
@@ -998,6 +999,16 @@ describe('HardwareService', () => {
         expect(rec.bannerText).toContain('Exynos 2400');
         expect(rec.bannerText).toContain('OpenCL');
         expect(rec.bannerText).toContain('MNN');
+      });
+
+      it('recommends one backend when Exynos runtime is available', async () => {
+        NativeModules.ExynosNpuDiffusionModule = {
+          isRuntimeAvailable: jest.fn().mockResolvedValue(true),
+        };
+        await setupExynosRec('S5E9945');
+        const rec = await hardwareService.getImageModelRecommendation();
+        expect(rec.recommendedBackend).toBe('one');
+        expect(rec.compatibleBackends).toEqual(['one', 'mnn']);
       });
 
       it('recommends mnn for Exynos 2200 (Mali-G615)', async () => {

@@ -86,8 +86,15 @@ export async function cleanupMMProjEntries(modelsDir: string): Promise<number> {
   return removedCount;
 }
 
-function detectBackend(dirName: string): 'mnn' | 'qnn' | 'coreml' | 'opencl' {
+function isExynosNpuName(name: string): boolean {
+  return name.includes('exynos-npu') ||
+    /(?:^|[\s_-])enn(?:[\s_-]|$)/.test(name) ||
+    /(?:^|[\s_-])one(?:[\s_-]|$)/.test(name);
+}
+
+function detectBackend(dirName: string): 'mnn' | 'qnn' | 'coreml' | 'opencl' | 'one' {
   if (dirName.includes('qnn') || dirName.includes('8gen')) return 'qnn';
+  if (isExynosNpuName(dirName)) return 'one';
   if (dirName.includes('coreml')) return 'coreml';
   if (dirName.includes('opencl') || dirName.includes('mali') || dirName.includes('exynos')) return 'opencl';
   return 'mnn';

@@ -138,6 +138,22 @@ class ActiveModelService {
       }
     }
 
+    if (model.backend === 'one') {
+      const socInfo = await hardwareService.getSoCInfo();
+      if (socInfo.vendor !== 'exynos') {
+        throw new Error(
+          'Exynos NPU models require a Samsung Exynos device. ' +
+          'Your device is not compatible with this backend.',
+        );
+      }
+      if (!socInfo.exynosNpuAvailable) {
+        throw new Error(
+          'The Exynos NPU backend is not available in this build. ' +
+          'Install a build with the Samsung runtime integrated, or use a CPU model instead.',
+        );
+      }
+    }
+
     this.loadingState.image = true;
     this.notifyListeners();
     this.imageLoadPromise = doLoadImageModel({

@@ -80,14 +80,19 @@ export function useModelsScreen() {
     const hasMLModelC = dirContents.some(f => f.name.endsWith('.mlmodelc'));
     const hasNestedMLModelC = !hasMLModelC && dirContents.some(f => f.isDirectory());
     let resolvedModelDir = modelDir;
-    let backend: 'mnn' | 'qnn' | 'coreml' | undefined;
+    let backend: 'mnn' | 'qnn' | 'coreml' | 'one' | undefined;
     if (hasMLModelC || hasNestedMLModelC) {
       backend = 'coreml';
       resolvedModelDir = await resolveCoreMLModelDir(modelDir);
     } else {
       const hasMNN = dirContents.some(f => f.name.endsWith('.mnn'));
       const hasQNN = dirContents.some(f => f.name.endsWith('.bin') || f.name.includes('qnn'));
-      if (hasMNN) backend = 'mnn';
+      const nameLower = fileName.toLowerCase();
+      const hasOne = nameLower.includes('exynos-npu') ||
+        /(?:^|[\s_-])enn(?:[\s_-]|$)/.test(nameLower) ||
+        /(?:^|[\s_-])one(?:[\s_-]|$)/.test(nameLower);
+      if (hasOne) backend = 'one';
+      else if (hasMNN) backend = 'mnn';
       else if (hasQNN) backend = 'qnn';
     }
     await RNFS.unlink(zipPath).catch(() => {});

@@ -208,6 +208,7 @@ export function useImageModels(setAlertState: (s: AlertState) => void) {
       if (!userChangedBackendFilter && Platform.OS !== 'ios') {
         setBackendFilter(
           rec.recommendedBackend === 'qnn' ? 'qnn'
+          : rec.recommendedBackend === 'one' ? 'one'
           : rec.recommendedBackend === 'mnn' ? 'mnn'
           : 'all'
         );

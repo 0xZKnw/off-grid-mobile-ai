@@ -59,6 +59,8 @@ export const BACKEND_OPTIONS: { key: BackendFilter; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'mnn', label: 'CPU' },
   { key: 'qnn', label: 'NPU' },
+  { key: 'one', label: 'Exynos NPU' },
+  { key: 'coreml', label: 'Core ML' },
 ];
 
 export const initialFilterState: FilterState = {

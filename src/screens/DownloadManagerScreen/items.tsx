@@ -46,7 +46,15 @@ export function formatBytes(bytes: number): string {
 }
 
 export function extractQuantization(fileName: string): string {
-  if (fileName.toLowerCase().includes('coreml')) return 'Core ML';
+  const lowerName = fileName.toLowerCase();
+  if (lowerName.includes('coreml')) return 'Core ML';
+  if (
+    lowerName.includes('exynos-npu') ||
+    /(?:^|[\s_-])enn(?:[\s_-]|$)/.test(lowerName) ||
+    /(?:^|[\s_-])one(?:[\s_-]|$)/.test(lowerName)
+  ) {
+    return 'Exynos NPU';
+  }
   const upperName = fileName.toUpperCase();
   const patterns = ['Q2_K', 'Q3_K_S', 'Q3_K_M', 'Q4_0', 'Q4_K_S', 'Q4_K_M', 'Q5_K_S', 'Q5_K_M', 'Q6_K', 'Q8_0'];
   for (const pattern of patterns) {
@@ -55,6 +63,14 @@ export function extractQuantization(fileName: string): string {
   }
   const match = /[QqFf]\d+_?[KkMmSs]*/.exec(fileName);
   return match ? match[0].toUpperCase() : 'Unknown';
+}
+
+function getImageBackendLabel(backend?: ONNXImageModel['backend']): string {
+  if (backend === 'coreml') return 'Core ML';
+  if (backend === 'qnn') return 'NPU';
+  if (backend === 'one') return 'Exynos NPU';
+  if (backend === 'opencl') return 'OpenCL';
+  return 'CPU';
 }
 
 export function getStatusText(status: string): string {
@@ -145,7 +161,7 @@ export function buildDownloadItems(data: DownloadItemsData): DownloadItem[] {
       modelId: model.id,
       fileName: model.name,
       author: 'Image Generation',
-      quantization: '',
+      quantization: getImageBackendLabel(model.backend),
       fileSize: model.size,
       bytesDownloaded: model.size,
       progress: 1,

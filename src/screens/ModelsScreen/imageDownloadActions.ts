@@ -11,6 +11,13 @@ import { resolveCoreMLModelDir, downloadCoreMLTokenizerFiles } from '../../utils
 import { ONNXImageModel } from '../../types';
 import { ImageModelDescriptor } from './types';
 
+function getBackendDownloadLabel(backend: ImageModelDescriptor['backend']): string {
+  if (backend === 'coreml') return 'Core ML';
+  if (backend === 'qnn') return 'NPU';
+  if (backend === 'one') return 'Exynos NPU';
+  return 'CPU';
+}
+
 /** Remove downloading indicator and clear progress for a model. */
 export function cleanupDownloadState(deps: ImageDownloadDeps, modelId: string, downloadId?: number) {
   deps.removeImageModelDownloading(modelId);
@@ -206,7 +213,11 @@ export async function proceedWithDownload(
     });
     deps.setImageModelDownloadId(modelInfo.id, downloadInfo.downloadId);
     deps.setBackgroundDownload(downloadInfo.downloadId, {
-      modelId: `image:${modelInfo.id}`, fileName, quantization: '', author: 'Image Generation', totalBytes: modelInfo.size,
+      modelId: `image:${modelInfo.id}`,
+      fileName,
+      quantization: getBackendDownloadLabel(modelInfo.backend),
+      author: 'Image Generation',
+      totalBytes: modelInfo.size,
       imageModelName: modelInfo.name, imageModelDescription: modelInfo.description,
       imageModelSize: modelInfo.size, imageModelStyle: modelInfo.style,
       imageModelBackend: modelInfo.backend, imageDownloadType: 'zip',
@@ -221,12 +232,16 @@ export async function proceedWithDownload(
       deps.updateModelProgress(modelInfo.id, 0.92);
       if (!(await RNFS.exists(modelDir))) await RNFS.mkdir(modelDir);
       await unzip(zipPath, modelDir);
-      const resolvedModelDir = modelInfo.backend === 'coreml' ? await resolveCoreMLModelDir(modelDir) : modelDir;
+      const resolvedModelDir = modelInfo.backend === 'coreml'
+        ? await resolveCoreMLModelDir(modelDir)
+        : modelDir;
       deps.updateModelProgress(modelInfo.id, 0.95);
       await RNFS.unlink(zipPath).catch(() => {});
       const imageModel: ONNXImageModel = {
         id: modelInfo.id, name: modelInfo.name, description: modelInfo.description,
-        modelPath: resolvedModelDir, downloadedAt: new Date().toISOString(), size: modelInfo.size, style: modelInfo.style,
+        modelPath: resolvedModelDir, downloadedAt: new Date().toISOString(),
+        size: modelInfo.size, style: modelInfo.style,
+        backend: modelInfo.backend,
       };
       await registerAndNotify(deps, { imageModel, modelName: modelInfo.name, downloadId: downloadInfo.downloadId });
     });
@@ -276,6 +291,24 @@ export async function handleDownloadImageModel(
           { text: 'OK', style: 'cancel' },
         ]));
       }
+      return;
+    }
+  }
+
+  if (modelInfo.backend === 'one' && Platform.OS === 'android') {
+    const socInfo = await hardwareService.getSoCInfo();
+    let warningMessage: string | null = null;
+    if (socInfo.vendor !== 'exynos') {
+      warningMessage = 'Exynos NPU models require a Samsung Exynos device. ' +
+        'Your device is not compatible with this model. Consider downloading a CPU model instead.';
+    } else if (!socInfo.exynosNpuAvailable) {
+      warningMessage = 'This build does not include the Exynos NPU runtime yet. ' +
+        'The model cannot run until the Samsung runtime is integrated. Use a CPU model instead.';
+    }
+    if (warningMessage) {
+      deps.setAlertState(showAlert('Incompatible Model', warningMessage, [
+        { text: 'OK', style: 'cancel' },
+      ]));
       return;
     }
   }

@@ -4,7 +4,7 @@ import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { ModelSource } from '../../types';
 import { RootStackParamList, MainTabParamList } from '../../navigation/types';
 
-export type BackendFilter = 'all' | 'mnn' | 'qnn' | 'coreml';
+export type BackendFilter = 'all' | 'mnn' | 'qnn' | 'one' | 'coreml';
 
 export interface ImageModelDescriptor {
   id: string;
@@ -13,7 +13,7 @@ export interface ImageModelDescriptor {
   downloadUrl: string;
   size: number;
   style: string;
-  backend: 'mnn' | 'qnn' | 'coreml';
+  backend: 'mnn' | 'qnn' | 'one' | 'coreml';
   variant?: string;
   huggingFaceRepo?: string;
   huggingFaceFiles?: { path: string; size: number }[];

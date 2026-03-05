@@ -95,17 +95,19 @@ export interface SoCInfo {
   exynosVariant?: 'exynos2400' | 'exynos2200' | 'exynos2100';
   /** Samsung Exynos GPU tier for OpenCL acceleration */
   exynosGpuTier?: 'mali-g720' | 'mali-g615' | 'unknown';
+  /** True only when an Exynos-specific image runtime is actually available. */
+  exynosNpuAvailable?: boolean;
   appleChip?: 'A14' | 'A15' | 'A16' | 'A17Pro' | 'A18';
 }
 
 export interface ImageModelRecommendation {
-  recommendedBackend: 'qnn' | 'mnn' | 'coreml' | 'opencl' | 'all';
+  recommendedBackend: 'qnn' | 'mnn' | 'coreml' | 'opencl' | 'one' | 'all';
   qnnVariant?: '8gen2' | '8gen1' | 'min';
   /** Substrings matched against model name to identify recommended models */
   recommendedModels?: string[];
   bannerText: string;
   warning?: string;
-  compatibleBackends: Array<'mnn' | 'qnn' | 'coreml' | 'opencl'>;
+  compatibleBackends: Array<'mnn' | 'qnn' | 'coreml' | 'opencl' | 'one'>;
 }
 
 // Hardware-related types
@@ -256,7 +258,7 @@ export interface ONNXImageModel {
   downloadedAt: string;
   size: number; // Total size of all model files in bytes
   style?: string; // e.g., 'creative', 'photorealistic', 'anime'
-  backend?: 'mnn' | 'qnn' | 'coreml' | 'opencl'; // 'mnn' for CPU, 'qnn' for Qualcomm NPU, 'coreml' for Apple Core ML, 'opencl' for Mali GPU
+  backend?: 'mnn' | 'qnn' | 'coreml' | 'opencl' | 'one'; // 'mnn' for CPU, 'qnn' for Qualcomm NPU, 'coreml' for Apple Core ML, 'opencl' for Mali GPU, 'one' for Samsung Exynos NPU
 }
 
 // Image generation state for UI

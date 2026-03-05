@@ -838,6 +838,36 @@ describe('ModelManager', () => {
       expect(discovered[0].backend).toBe('qnn');
     });
 
+    it('detects one backend from explicit Exynos NPU directory names', async () => {
+      mockedRNFS.exists.mockResolvedValue(true);
+      mockedRNFS.readDir
+        .mockResolvedValueOnce([
+          {
+            name: 'sd15-exynos-npu',
+            path: '/mock/documents/image_models/sd15-exynos-npu',
+            size: 0,
+            isFile: () => false,
+            isDirectory: () => true,
+          } as any,
+        ])
+        .mockResolvedValueOnce([
+          {
+            name: 'model.bin',
+            path: '/mock/documents/image_models/sd15-exynos-npu/model.bin',
+            size: 1000000000,
+            isFile: () => true,
+            isDirectory: () => false,
+          } as any,
+        ]);
+
+      mockedAsyncStorage.getItem.mockResolvedValue('[]');
+
+      const discovered = await modelManager.scanForUntrackedImageModels();
+
+      expect(discovered).toHaveLength(1);
+      expect(discovered[0].backend).toBe('one');
+    });
+
     it('skips already registered models', async () => {
       const registeredModel = {
         id: 'existing',

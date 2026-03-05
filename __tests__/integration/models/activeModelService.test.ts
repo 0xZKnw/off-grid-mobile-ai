@@ -1413,6 +1413,25 @@ describe('ActiveModelService Integration', () => {
 
       await expect(activeModelService.loadImageModel('qnn-model-2')).resolves.not.toThrow();
     });
+
+    it('throws when loading an Exynos NPU model without the Exynos runtime', async () => {
+      const exynosModel = createONNXImageModel({ id: 'one-model-1', backend: 'one' });
+      useAppStore.setState({
+        downloadedImageModels: [exynosModel],
+        settings: { imageThreads: 4 } as any,
+      });
+
+      mockLocalDreamService.isModelLoaded.mockResolvedValue(false);
+      mockHardwareService.getSoCInfo = jest.fn().mockResolvedValue({
+        vendor: 'exynos',
+        exynosVariant: 'exynos2400',
+        exynosNpuAvailable: false,
+      });
+
+      await expect(activeModelService.loadImageModel('one-model-1')).rejects.toThrow(
+        'The Exynos NPU backend is not available in this build',
+      );
+    });
   });
 
   // ============================================================================

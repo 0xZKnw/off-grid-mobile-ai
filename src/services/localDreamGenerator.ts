@@ -6,14 +6,21 @@ import {
 } from '../types';
 import { generateRandomSeed } from '../utils/generateId';
 
-const { LocalDreamModule, CoreMLDiffusionModule } = NativeModules;
+const { LocalDreamModule, CoreMLDiffusionModule, ExynosNpuDiffusionModule } = NativeModules;
 
-// Pick the right native module per platform
-const DiffusionModule = Platform.select({
-  ios: CoreMLDiffusionModule,
-  android: LocalDreamModule,
-  default: null,
-});
+type DiffusionBackend = 'mnn' | 'qnn' | 'opencl' | 'one' | 'auto';
+type DiffusionModuleType = {
+  loadModel: (params: { modelPath: string; threads?: number; backend: string }) => Promise<boolean>;
+  unloadModel: () => Promise<boolean>;
+  isModelLoaded: () => Promise<boolean>;
+  getLoadedModelPath: () => Promise<string | null>;
+  generateImage: (params: Record<string, unknown>) => Promise<any>;
+  cancelGeneration: () => Promise<boolean>;
+  isGenerating: () => Promise<boolean>;
+  getGeneratedImages: () => Promise<any[]>;
+  deleteGeneratedImage: (imageId: string) => Promise<boolean>;
+  getConstants: () => any;
+};
 
 type ProgressCallback = (progress: ImageGenerationProgress) => void;
 type PreviewCallback = (preview: { previewPath: string; step: number; totalSteps: number }) => void;
@@ -33,22 +40,76 @@ class LocalDreamGeneratorService {
   private loadedThreads: number | null = null;
   private generating = false;
   private eventEmitter: NativeEventEmitter | null = null;
+  private activeModule: DiffusionModuleType | null = null;
 
-  private getEmitter(): NativeEventEmitter {
+  private getFallbackModule(): DiffusionModuleType | null {
+    return Platform.select({
+      ios: CoreMLDiffusionModule,
+      android: LocalDreamModule,
+      default: null,
+    }) as DiffusionModuleType | null;
+  }
+
+  private getModuleForBackend(backend: DiffusionBackend): DiffusionModuleType | null {
+    if (Platform.OS === 'ios') {
+      return CoreMLDiffusionModule as DiffusionModuleType | null;
+    }
+    if (Platform.OS !== 'android') {
+      return null;
+    }
+    if (backend === 'one') {
+      return (ExynosNpuDiffusionModule as DiffusionModuleType | null) ?? null;
+    }
+    return (LocalDreamModule as DiffusionModuleType | null) ?? null;
+  }
+
+  private async resolveActiveModule(): Promise<DiffusionModuleType | null> {
+    if (this.activeModule) {
+      return this.activeModule;
+    }
+    if (Platform.OS !== 'android') {
+      return this.getFallbackModule();
+    }
+
+    const candidates = [
+      ExynosNpuDiffusionModule as DiffusionModuleType | undefined,
+      LocalDreamModule as DiffusionModuleType | undefined,
+    ].filter(Boolean) as DiffusionModuleType[];
+
+    for (const module of candidates) {
+      try {
+        if (await module.isModelLoaded()) {
+          this.activeModule = module;
+          return module;
+        }
+      } catch {
+        // Probe the next module.
+      }
+    }
+
+    return this.getFallbackModule();
+  }
+
+  private getEmitter(module: DiffusionModuleType): NativeEventEmitter {
     if (!this.eventEmitter) {
-      this.eventEmitter = new NativeEventEmitter(DiffusionModule);
+      this.eventEmitter = new NativeEventEmitter(module as any);
     }
     return this.eventEmitter;
   }
 
   isAvailable(): boolean {
-    return DiffusionModule != null;
+    if (Platform.OS === 'android') {
+      return LocalDreamModule != null || ExynosNpuDiffusionModule != null;
+    }
+    return this.getFallbackModule() != null;
   }
 
   async isModelLoaded(): Promise<boolean> {
     if (!this.isAvailable()) return false;
     try {
-      return await DiffusionModule.isModelLoaded();
+      const module = await this.resolveActiveModule();
+      if (!module) return false;
+      return await module.isModelLoaded();
     } catch {
       return false;
     }
@@ -57,15 +118,21 @@ class LocalDreamGeneratorService {
   async getLoadedModelPath(): Promise<string | null> {
     if (!this.isAvailable()) return null;
     try {
-      return await DiffusionModule.getLoadedModelPath();
+      const module = await this.resolveActiveModule();
+      if (!module) return null;
+      return await module.getLoadedModelPath();
     } catch {
       return null;
     }
   }
 
-  async loadModel(modelPath: string, threads?: number, backend: 'mnn' | 'qnn' | 'opencl' | 'auto' = 'auto'): Promise<boolean> {
+  async loadModel(modelPath: string, threads?: number, backend: DiffusionBackend = 'auto'): Promise<boolean> {
     if (!this.isAvailable()) {
       throw new Error('LocalDream image generation is not available on this platform');
+    }
+    const module = this.getModuleForBackend(backend);
+    if (!module) {
+      throw new Error(`No native diffusion module is available for backend: ${backend}`);
     }
 
     const params: { modelPath: string; threads?: number; backend: string } = {
@@ -76,7 +143,9 @@ class LocalDreamGeneratorService {
       params.threads = threads;
     }
 
-    const result = await DiffusionModule.loadModel(params);
+    const result = await module.loadModel(params);
+    this.activeModule = module;
+    this.eventEmitter = null;
     this.loadedThreads = typeof threads === 'number' ? threads : this.loadedThreads;
     return result;
   }
@@ -87,13 +156,21 @@ class LocalDreamGeneratorService {
 
   async unloadModel(): Promise<boolean> {
     if (!this.isAvailable()) return true;
-    const result = await DiffusionModule.unloadModel();
+    const module = await this.resolveActiveModule();
+    if (!module) return true;
+    const result = await module.unloadModel();
+    this.activeModule = null;
+    this.eventEmitter = null;
     this.loadedThreads = null;
     return result;
   }
 
-  private subscribeToProgress(onProgress?: ProgressCallback, onPreview?: PreviewCallback): any {
-    return this.getEmitter().addListener(
+  private subscribeToProgress(
+    module: DiffusionModuleType,
+    onProgress?: ProgressCallback,
+    onPreview?: PreviewCallback,
+  ): any {
+    return this.getEmitter(module).addListener(
       'LocalDreamProgress',
       (event: { step: number; totalSteps: number; progress: number; previewPath?: string }) => {
         onProgress?.({
@@ -121,12 +198,17 @@ class LocalDreamGeneratorService {
       throw new Error('Image generation already in progress');
     }
 
+    const module = await this.resolveActiveModule();
+    if (!module) {
+      throw new Error('No active diffusion module is loaded');
+    }
+
     this.generating = true;
-    const progressSubscription = this.subscribeToProgress(onProgress, onPreview);
+    const progressSubscription = this.subscribeToProgress(module, onProgress, onPreview);
 
     try {
       // Call native generateImage — handles HTTP POST, SSE parsing, and PNG saving
-      const result = await DiffusionModule.generateImage({
+      const result = await module.generateImage({
         prompt: params.prompt,
         negativePrompt: params.negativePrompt || '',
         steps: params.steps || 20,
@@ -158,7 +240,9 @@ class LocalDreamGeneratorService {
   async cancelGeneration(): Promise<boolean> {
     if (!this.isAvailable()) return true;
     this.generating = false;
-    return await DiffusionModule.cancelGeneration();
+    const module = await this.resolveActiveModule();
+    if (!module) return true;
+    return await module.cancelGeneration();
   }
 
   async isGenerating(): Promise<boolean> {
@@ -168,7 +252,9 @@ class LocalDreamGeneratorService {
   async getGeneratedImages(): Promise<GeneratedImage[]> {
     if (!this.isAvailable()) return [];
     try {
-      const images = await DiffusionModule.getGeneratedImages();
+      const module = await this.resolveActiveModule();
+      if (!module) return [];
+      const images = await module.getGeneratedImages();
       return images.map((img: any) => ({
         id: img.id,
         prompt: img.prompt || '',
@@ -187,11 +273,14 @@ class LocalDreamGeneratorService {
 
   async deleteGeneratedImage(imageId: string): Promise<boolean> {
     if (!this.isAvailable()) return false;
-    return await DiffusionModule.deleteGeneratedImage(imageId);
+    const module = await this.resolveActiveModule();
+    if (!module) return false;
+    return await module.deleteGeneratedImage(imageId);
   }
 
   getConstants() {
-    if (!this.isAvailable()) {
+    const module = this.activeModule ?? this.getFallbackModule();
+    if (!this.isAvailable() || !module) {
       return {
         DEFAULT_STEPS: 20,
         DEFAULT_GUIDANCE_SCALE: 7.5,
@@ -201,7 +290,7 @@ class LocalDreamGeneratorService {
         SUPPORTED_HEIGHTS: [128, 192, 256, 320, 384, 448, 512],
       };
     }
-    return DiffusionModule.getConstants();
+    return module.getConstants();
   }
 }
 

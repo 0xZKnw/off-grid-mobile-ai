@@ -173,7 +173,13 @@ export const StorageSettingsScreen: React.FC = () => {
                 <View style={styles.modelInfo}>
                   <Text style={styles.modelName} numberOfLines={1}>{model.name}</Text>
                   <Text style={styles.modelMeta}>
-                    {model.backend === 'coreml' ? 'Core ML' : model.backend === 'qnn' ? 'Qualcomm NPU' : 'CPU'}
+                    {model.backend === 'coreml'
+                      ? 'Core ML'
+                      : model.backend === 'qnn'
+                      ? 'Qualcomm NPU'
+                      : model.backend === 'one'
+                      ? 'Exynos NPU'
+                      : 'CPU'}
                     {model.style ? ` • ${model.style}` : ''}
                   </Text>
                 </View>

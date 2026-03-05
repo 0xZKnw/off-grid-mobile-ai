@@ -101,7 +101,9 @@ export function getImageModelCompatibility(
 
   let incompatibleReason: string | undefined;
   if (!backendCompatible) {
-    if (socInfo?.vendor === 'qualcomm' && !socInfo.hasNPU) {
+    if (model.backend === 'one') {
+      incompatibleReason = 'Requires Exynos NPU build';
+    } else if (socInfo?.vendor === 'qualcomm' && !socInfo.hasNPU) {
       incompatibleReason = 'Requires newer Snapdragon';
     } else {
       incompatibleReason = 'Requires Snapdragon 888+';
@@ -126,7 +128,7 @@ export function hfModelToDescriptor(
     name: hfModel.displayName,
     description: hfModel._coreml
       ? `Core ML model from ${hfModel.repo}`
-      : `${hfModel.backend === 'qnn' ? 'NPU' : 'CPU'} model from ${hfModel.repo}`,
+      : `${hfModel.backend === 'qnn' ? 'NPU' : hfModel.backend === 'one' ? 'Exynos NPU' : 'CPU'} model from ${hfModel.repo}`,
     downloadUrl: hfModel.downloadUrl,
     size: hfModel.size,
     style: guessStyle(hfModel.name),

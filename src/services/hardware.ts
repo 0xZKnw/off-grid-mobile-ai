@@ -245,12 +245,20 @@ class HardwareService {
     const vendor = this.detectAndroidVendor(hardware.toLowerCase(), model, socModel);
     const qnnVariant = vendor === 'qualcomm' ? await this.getQnnVariantFromSoC(socModel) : undefined;
     const exynosVariant = vendor === 'exynos' ? await this.getExynosVariantFromSoC(socModel) : undefined;
+    const exynosNpuAvailable = vendor === 'exynos' ? await this.isExynosNpuRuntimeAvailable() : undefined;
     // Exynos Maia NPU has no public SDK — hasNPU stays false; GPU tier drives OpenCL path
     const exynosGpuTier = exynosVariant === 'exynos2400' ? 'mali-g720'
       : exynosVariant === 'exynos2200' ? 'mali-g615'
       : exynosVariant ? 'unknown' as const
       : undefined;
-    this.cachedSoCInfo = { vendor, hasNPU: vendor === 'qualcomm' && !!qnnVariant, qnnVariant, exynosVariant, exynosGpuTier };
+    this.cachedSoCInfo = {
+      vendor,
+      hasNPU: vendor === 'qualcomm' && !!qnnVariant,
+      qnnVariant,
+      exynosVariant,
+      exynosGpuTier,
+      exynosNpuAvailable,
+    };
     return this.cachedSoCInfo;
   }
 
@@ -268,6 +276,16 @@ class HardwareService {
       if (localDream?.getSoCModel) return await localDream.getSoCModel();
     } catch { /* native module unavailable */ }
     return '';
+  }
+
+  private async isExynosNpuRuntimeAvailable(): Promise<boolean> {
+    try {
+      const exynosModule = NativeModules.ExynosNpuDiffusionModule;
+      if (!exynosModule?.isRuntimeAvailable) return false;
+      return await exynosModule.isRuntimeAvailable();
+    } catch {
+      return false;
+    }
   }
 
   private classifySmNumber(socModel: string): '8gen2' | '8gen1' | 'min' | undefined {
@@ -303,6 +321,13 @@ class HardwareService {
     // SD subprocess does not ship OpenCL/Vulkan — image gen stays on MNN CPU for all Exynos.
     const label = socInfo.exynosVariant === 'exynos2400' ? 'Exynos 2400 (Mali-G720)'
       : socInfo.exynosVariant === 'exynos2200' ? 'Exynos 2200' : 'Exynos';
+    if (socInfo.exynosNpuAvailable) {
+      return {
+        recommendedBackend: 'one',
+        bannerText: `${label} — Exynos NPU enabled for image generation`,
+        compatibleBackends: ['one', 'mnn'],
+      };
+    }
     if (socInfo.exynosGpuTier === 'mali-g720') {
       return {
         recommendedBackend: 'mnn',

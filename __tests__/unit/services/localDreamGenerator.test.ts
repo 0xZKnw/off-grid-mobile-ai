@@ -43,6 +43,21 @@ const mockCoreMLModule = {
   getConstants: jest.fn(),
 };
 
+const mockExynosNpuModule = {
+  loadModel: jest.fn(),
+  unloadModel: jest.fn(),
+  isModelLoaded: jest.fn(),
+  getLoadedModelPath: jest.fn(),
+  generateImage: jest.fn(),
+  cancelGeneration: jest.fn(),
+  isGenerating: jest.fn(),
+  isNpuSupported: jest.fn(),
+  isRuntimeAvailable: jest.fn(),
+  getGeneratedImages: jest.fn(),
+  deleteGeneratedImage: jest.fn(),
+  getConstants: jest.fn(),
+};
+
 const mockAddListener = jest.fn().mockReturnValue({ remove: jest.fn() });
 const mockRemoveAllListeners = jest.fn();
 
@@ -52,6 +67,7 @@ jest.mock('react-native', () => {
     NativeModules: {
       LocalDreamModule: mockLocalDreamModule,
       CoreMLDiffusionModule: mockCoreMLModule,
+      ExynosNpuDiffusionModule: mockExynosNpuModule,
     },
     NativeEventEmitter: jest.fn().mockImplementation(() => ({
       addListener: mockAddListener,
@@ -145,6 +161,19 @@ describe('LocalDreamGeneratorService', () => {
         modelPath: '/path/to/model',
         threads: 4,
         backend: 'mnn',
+      });
+      expect(result).toBe(true);
+    });
+
+    it('loadModel delegates to Exynos module for one backend', async () => {
+      mockExynosNpuModule.loadModel.mockResolvedValue(true);
+
+      const result = await service.loadModel('/path/to/model', 4, 'one');
+
+      expect(mockExynosNpuModule.loadModel).toHaveBeenCalledWith({
+        modelPath: '/path/to/model',
+        threads: 4,
+        backend: 'one',
       });
       expect(result).toBe(true);
     });

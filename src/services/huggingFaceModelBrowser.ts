@@ -2,7 +2,7 @@ export interface HFImageModel {
   id: string;
   name: string;
   displayName: string;
-  backend: 'mnn' | 'qnn';
+  backend: 'mnn' | 'qnn' | 'one';
   variant?: string;
   downloadUrl: string;
   fileName: string;

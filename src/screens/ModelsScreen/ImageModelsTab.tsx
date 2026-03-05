@@ -50,7 +50,13 @@ const ImageModelCardItem: React.FC<ImageModelCardProps> = ({
   const styles = useThemedStyles(createStyles);
   const recommended = isRecommendedModel(model);
   const { isCompatible, incompatibleReason } = getImageModelCompatibility(model, imageRec);
-  const authorLabel = model._coreml ? 'Core ML' : model.backend === 'qnn' ? 'NPU' : 'CPU';
+  const authorLabel = model._coreml
+    ? 'Core ML'
+    : model.backend === 'qnn'
+    ? 'NPU'
+    : model.backend === 'one'
+    ? 'Exynos NPU'
+    : 'CPU';
   const variantSuffix = model.variant ? ` \u00B7 ${getVariantLabel(model.variant)}` : '';
   return (
     <View>

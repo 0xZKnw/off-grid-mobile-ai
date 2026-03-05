@@ -95,11 +95,13 @@ function buildImageGenMeta(
     ? 'Core ML (ANE)'
     : backend === 'qnn'
     ? 'QNN (NPU)'
+    : backend === 'one'
+    ? 'Exynos NPU'
     : backend === 'opencl'
     ? 'OpenCL (Mali GPU)'
     : 'MNN (CPU)';
   return {
-    gpu: Platform.OS === 'ios' ? true : backend === 'qnn' || backend === 'opencl',
+    gpu: Platform.OS === 'ios' ? true : backend === 'qnn' || backend === 'opencl' || backend === 'one',
     gpuBackend,
     modelName: model.name,
     steps: opts.steps,
