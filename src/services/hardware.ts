@@ -213,11 +213,21 @@ class HardwareService {
     return undefined;
   }
 
-  private detectAndroidVendor(hw: string, model: string): SoCVendor {
-    if (hw.includes('qcom')) return 'qualcomm';
-    if (model.startsWith('Pixel')) return 'tensor';
+  private detectAndroidVendor(hw: string, model: string, socModel: string = ''): SoCVendor {
+    const normalizedModel = model.toLowerCase();
+    const upperSocModel = socModel.toUpperCase();
+
+    if (hw.includes('qcom') || upperSocModel.startsWith('SM')) return 'qualcomm';
+    if (normalizedModel.startsWith('pixel') || upperSocModel.includes('TENSOR')) return 'tensor';
     if (hw.includes('mt') || hw.includes('mediatek')) return 'mediatek';
-    if (hw.includes('exynos') || hw.includes('samsungexynos')) return 'exynos';
+    if (
+      hw.includes('exynos') ||
+      hw.includes('samsungexynos') ||
+      hw.startsWith('s5e') ||
+      upperSocModel.startsWith('S5E')
+    ) {
+      return 'exynos';
+    }
     return 'unknown';
   }
 
@@ -231,9 +241,10 @@ class HardwareService {
     }
     const hardware = await DeviceInfo.getHardware();
     const model = DeviceInfo.getModel();
-    const vendor = this.detectAndroidVendor(hardware.toLowerCase(), model);
-    const qnnVariant = vendor === 'qualcomm' ? await this.getQnnVariantFromSoC() : undefined;
-    const exynosVariant = vendor === 'exynos' ? await this.getExynosVariantFromSoC() : undefined;
+    const socModel = await this.fetchSoCModel();
+    const vendor = this.detectAndroidVendor(hardware.toLowerCase(), model, socModel);
+    const qnnVariant = vendor === 'qualcomm' ? await this.getQnnVariantFromSoC(socModel) : undefined;
+    const exynosVariant = vendor === 'exynos' ? await this.getExynosVariantFromSoC(socModel) : undefined;
     // Exynos Maia NPU has no public SDK — hasNPU stays false; GPU tier drives OpenCL path
     const exynosGpuTier = exynosVariant === 'exynos2400' ? 'mali-g720'
       : exynosVariant === 'exynos2200' ? 'mali-g615'
@@ -243,8 +254,10 @@ class HardwareService {
     return this.cachedSoCInfo;
   }
 
-  private async getQnnVariantFromSoC(): Promise<'8gen2' | '8gen1' | 'min' | undefined> {
-    const socModel = await this.fetchSoCModel();
+  private async getQnnVariantFromSoC(
+    socModelOverride?: string,
+  ): Promise<'8gen2' | '8gen1' | 'min' | undefined> {
+    const socModel = socModelOverride || await this.fetchSoCModel();
     if (!socModel) return undefined;
     return this.classifySmNumber(socModel);
   }
@@ -269,12 +282,20 @@ class HardwareService {
     return 'min';
   }
 
-  private async getExynosVariantFromSoC(): Promise<'exynos2400' | 'exynos2200' | 'exynos2100' | undefined> {
-    const socModel = await this.fetchSoCModel();
-    if (!socModel) return undefined;
+  private classifyExynosVariant(
+    socModel: string,
+  ): 'exynos2400' | 'exynos2200' | 'exynos2100' | undefined {
     const upper = socModel.toUpperCase();
     const match = EXYNOS_SOC_VARIANTS.find(v => upper.startsWith(v.prefix));
     return match?.variant;
+  }
+
+  private async getExynosVariantFromSoC(
+    socModelOverride?: string,
+  ): Promise<'exynos2400' | 'exynos2200' | 'exynos2100' | undefined> {
+    const socModel = socModelOverride || await this.fetchSoCModel();
+    if (!socModel) return undefined;
+    return this.classifyExynosVariant(socModel);
   }
 
   private getExynosImageRec(socInfo: SoCInfo): ImageModelRecommendation {
@@ -283,9 +304,17 @@ class HardwareService {
     const label = socInfo.exynosVariant === 'exynos2400' ? 'Exynos 2400 (Mali-G720)'
       : socInfo.exynosVariant === 'exynos2200' ? 'Exynos 2200' : 'Exynos';
     if (socInfo.exynosGpuTier === 'mali-g720') {
-      return { recommendedBackend: 'opencl', bannerText: `${label} — GPU (OpenCL) acceleration enabled for chat`, compatibleBackends: ['opencl', 'mnn'] };
+      return {
+        recommendedBackend: 'mnn',
+        bannerText: `${label} — chat uses GPU (OpenCL); image models use CPU (MNN)`,
+        compatibleBackends: ['mnn'],
+      };
     }
-    return { recommendedBackend: 'mnn', bannerText: `${label} — CPU models recommended`, compatibleBackends: ['mnn'] };
+    return {
+      recommendedBackend: 'mnn',
+      bannerText: `${label} — image models use CPU (MNN)`,
+      compatibleBackends: ['mnn'],
+    };
   }
 
   private getIosImageRec(chip: SoCInfo['appleChip'], ramGB: number): ImageModelRecommendation {
