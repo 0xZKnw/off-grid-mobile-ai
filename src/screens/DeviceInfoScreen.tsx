@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -14,15 +14,37 @@ import type { ThemeColors, ThemeShadows } from '../theme';
 import { TYPOGRAPHY, SPACING } from '../constants';
 import { useAppStore } from '../stores';
 import { hardwareService } from '../services';
+import type { SoCInfo } from '../types';
 
 export const DeviceInfoScreen: React.FC = () => {
   const navigation = useNavigation();
-  const { deviceInfo } = useAppStore();
+  const { deviceInfo, settings } = useAppStore();
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
+  const [socInfo, setSocInfo] = useState<SoCInfo | null>(null);
 
   const totalRamGB = hardwareService.getTotalMemoryGB();
   const deviceTier = hardwareService.getDeviceTier();
+  const socLabel = hardwareService.getSoCDisplayName(socInfo);
+  const gpuLabel = hardwareService.getGpuDisplayName(socInfo);
+  const textAcceleration = hardwareService.getTextAccelerationDisplay(
+    socInfo,
+    settings?.enableGpu !== false,
+  );
+
+  useEffect(() => {
+    let mounted = true;
+    hardwareService.getSoCInfo()
+      .then(info => {
+        if (mounted) setSocInfo(info);
+      })
+      .catch(() => {
+        if (mounted) setSocInfo(null);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -42,6 +64,18 @@ export const DeviceInfoScreen: React.FC = () => {
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Model</Text>
             <Text style={styles.infoValue}>{deviceInfo?.deviceModel}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>SoC</Text>
+            <Text style={styles.infoValue}>{socLabel}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>GPU</Text>
+            <Text style={styles.infoValue}>{gpuLabel}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Text Acceleration</Text>
+            <Text style={styles.infoValue}>{textAcceleration}</Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>System</Text>
@@ -151,10 +185,13 @@ const createStyles = (colors: ThemeColors, shadows: ThemeShadows) => ({
   infoLabel: {
     ...TYPOGRAPHY.body,
     color: colors.textSecondary,
+    flex: 1,
   },
   infoValue: {
     ...TYPOGRAPHY.body,
     color: colors.text,
+    flexShrink: 1,
+    textAlign: 'right' as const,
   },
   tierBadge: {
     ...TYPOGRAPHY.label,

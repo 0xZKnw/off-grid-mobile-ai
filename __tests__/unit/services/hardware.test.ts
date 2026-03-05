@@ -713,10 +713,10 @@ describe('HardwareService', () => {
           expect(soc.exynosVariant).toBe('exynos2400');
         });
 
-        it('detects exynosGpuTier mali-g720 for exynos2400', async () => {
+        it('detects exynosGpuTier xclipse-940 for exynos2400', async () => {
           await setupExynosWithSoC('S5E9945');
           const soc = await hardwareService.getSoCInfo();
-          expect(soc.exynosGpuTier).toBe('mali-g720');
+          expect(soc.exynosGpuTier).toBe('xclipse-940');
         });
 
         it('falls back to SoC model for Exynos detection when hardware string is generic', async () => {
@@ -734,7 +734,7 @@ describe('HardwareService', () => {
           const soc = await hardwareService.getSoCInfo();
           expect(soc.vendor).toBe('exynos');
           expect(soc.exynosVariant).toBe('exynos2400');
-          expect(soc.exynosGpuTier).toBe('mali-g720');
+          expect(soc.exynosGpuTier).toBe('xclipse-940');
         });
 
         it('hasNPU is false for Exynos (no public NPU SDK)', async () => {
@@ -747,7 +747,7 @@ describe('HardwareService', () => {
           await setupExynosWithSoC('S5E9925');
           const soc = await hardwareService.getSoCInfo();
           expect(soc.exynosVariant).toBe('exynos2200');
-          expect(soc.exynosGpuTier).toBe('mali-g615');
+          expect(soc.exynosGpuTier).toBe('xclipse-920');
         });
 
         it('detects exynosVariant exynos2100 for S5E9840', async () => {
@@ -770,6 +770,24 @@ describe('HardwareService', () => {
           const soc = await hardwareService.getSoCInfo();
           expect(soc.exynosVariant).toBeUndefined();
           expect(soc.exynosGpuTier).toBeUndefined();
+        });
+
+        it('falls back to SM-S921B model code when SoC identifiers are unavailable', async () => {
+          Platform.OS = 'android' as typeof Platform.OS;
+          NativeModules.LocalDreamModule = { getSoCModel: jest.fn().mockResolvedValue('') };
+          mockedDeviceInfo.getTotalMemory.mockResolvedValue(8 * 1024 * 1024 * 1024);
+          mockedDeviceInfo.getUsedMemory.mockResolvedValue(2 * 1024 * 1024 * 1024);
+          mockedDeviceInfo.getModel.mockReturnValue('SM-S921B');
+          mockedDeviceInfo.getSystemName.mockReturnValue('Android');
+          mockedDeviceInfo.getSystemVersion.mockReturnValue('16');
+          mockedDeviceInfo.isEmulator.mockResolvedValue(false);
+          mockedDeviceInfo.getHardware.mockResolvedValue('something-else');
+          await hardwareService.getDeviceInfo();
+
+          const soc = await hardwareService.getSoCInfo();
+          expect(soc.vendor).toBe('exynos');
+          expect(soc.exynosVariant).toBe('exynos2400');
+          expect(soc.exynosGpuTier).toBe('xclipse-940');
         });
       });
     });
@@ -1011,7 +1029,7 @@ describe('HardwareService', () => {
         expect(rec.compatibleBackends).toEqual(['one', 'mnn']);
       });
 
-      it('recommends mnn for Exynos 2200 (Mali-G615)', async () => {
+      it('recommends mnn for Exynos 2200 (Xclipse 920)', async () => {
         Platform.OS = 'android' as typeof Platform.OS;
         NativeModules.LocalDreamModule = { getSoCModel: jest.fn().mockResolvedValue('S5E9925') };
         mockedDeviceInfo.getTotalMemory.mockResolvedValue(8 * 1024 * 1024 * 1024);

@@ -3,7 +3,8 @@ import DeviceInfo from 'react-native-device-info';
 
 // Access NativeModules.LocalDreamModule dynamically (not destructured)
 // so it can be mocked in tests after module import.
-const getLocalDreamModule = () => NativeModules.LocalDreamModule;
+const getAndroidHardwareModule = () =>
+  NativeModules.LocalDreamModule ?? NativeModules.ExynosNpuDiffusionModule;
 import { DeviceInfo as DeviceInfoType, ModelRecommendation, SoCInfo, SoCVendor, ImageModelRecommendation } from '../types';
 import { MODEL_RECOMMENDATIONS, RECOMMENDED_MODELS } from '../constants';
 
@@ -24,6 +25,28 @@ const EXYNOS_SOC_VARIANTS: Array<{ prefix: string; variant: 'exynos2400' | 'exyn
   { prefix: 'S5E9925', variant: 'exynos2200' },
   { prefix: 'S5E9840', variant: 'exynos2100' },
 ];
+
+const EXYNOS_MODEL_VARIANTS: Array<{ pattern: RegExp; variant: 'exynos2400' | 'exynos2200' | 'exynos2100' }> = [
+  { pattern: /^SM-S921B(?:$|[/-])/, variant: 'exynos2400' },
+  { pattern: /^SM-S926B(?:$|[/-])/, variant: 'exynos2400' },
+  { pattern: /^SM-S901B(?:$|[/-])/, variant: 'exynos2200' },
+  { pattern: /^SM-S906B(?:$|[/-])/, variant: 'exynos2200' },
+  { pattern: /^SM-S908B(?:$|[/-])/, variant: 'exynos2200' },
+  { pattern: /^SM-G991B(?:$|[/-])/, variant: 'exynos2100' },
+  { pattern: /^SM-G996B(?:$|[/-])/, variant: 'exynos2100' },
+  { pattern: /^SM-G998B(?:$|[/-])/, variant: 'exynos2100' },
+];
+
+type AndroidBuildInfo = {
+  socModel?: string;
+  socManufacturer?: string;
+  hardware?: string;
+  board?: string;
+  product?: string;
+  device?: string;
+  manufacturer?: string;
+  model?: string;
+};
 
 class HardwareService {
   private cachedDeviceInfo: DeviceInfoType | null = null;
@@ -213,18 +236,71 @@ class HardwareService {
     return undefined;
   }
 
-  private detectAndroidVendor(hw: string, model: string, socModel: string = ''): SoCVendor {
-    const normalizedModel = model.toLowerCase();
-    const upperSocModel = socModel.toUpperCase();
+  private normalizeBuildHint(value?: string): string {
+    return value?.trim().toLowerCase() ?? '';
+  }
 
-    if (hw.includes('qcom') || upperSocModel.startsWith('SM')) return 'qualcomm';
+  private normalizeModelCode(model: string): string {
+    return model.trim().toUpperCase().split('/')[0];
+  }
+
+  private inferExynosVariantFromModel(model: string): 'exynos2400' | 'exynos2200' | 'exynos2100' | undefined {
+    const modelCode = this.normalizeModelCode(model);
+    return EXYNOS_MODEL_VARIANTS.find(entry => entry.pattern.test(modelCode))?.variant;
+  }
+
+  private inferExynosVariantFromHints(
+    params: { socModel: string; model: string; buildInfo?: AndroidBuildInfo; libraryHardware: string },
+  ): 'exynos2400' | 'exynos2200' | 'exynos2100' | undefined {
+    const candidates = [
+      params.socModel,
+      params.buildInfo?.socModel,
+      params.buildInfo?.hardware,
+      params.buildInfo?.board,
+      params.buildInfo?.product,
+      params.buildInfo?.device,
+      params.libraryHardware,
+    ];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const variant = this.classifyExynosVariant(candidate);
+      if (variant) return variant;
+    }
+    return this.inferExynosVariantFromModel(params.model);
+  }
+
+  private detectAndroidVendor(params: {
+    libraryHardware: string;
+    model: string;
+    socModel?: string;
+    buildInfo?: AndroidBuildInfo;
+  }): SoCVendor {
+    const normalizedModel = params.model.toLowerCase();
+    const upperSocModel = (params.socModel ?? '').toUpperCase();
+    const hints = [
+      params.libraryHardware,
+      params.buildInfo?.socManufacturer,
+      params.buildInfo?.hardware,
+      params.buildInfo?.board,
+      params.buildInfo?.product,
+      params.buildInfo?.device,
+      params.buildInfo?.manufacturer,
+    ].map(value => this.normalizeBuildHint(value));
+
+    if (hints.some(value => value.includes('qcom') || value.includes('qualcomm')) || upperSocModel.startsWith('SM')) {
+      return 'qualcomm';
+    }
     if (normalizedModel.startsWith('pixel') || upperSocModel.includes('TENSOR')) return 'tensor';
-    if (hw.includes('mt') || hw.includes('mediatek')) return 'mediatek';
+    if (hints.some(value => value.startsWith('mt') || value.includes('mediatek'))) return 'mediatek';
     if (
-      hw.includes('exynos') ||
-      hw.includes('samsungexynos') ||
-      hw.startsWith('s5e') ||
-      upperSocModel.startsWith('S5E')
+      hints.some(value => value.includes('exynos') || value.includes('samsungexynos') || value.startsWith('s5e')) ||
+      upperSocModel.startsWith('S5E') ||
+      this.inferExynosVariantFromHints({
+        socModel: params.socModel ?? '',
+        model: params.model,
+        buildInfo: params.buildInfo,
+        libraryHardware: params.libraryHardware,
+      })
     ) {
       return 'exynos';
     }
@@ -241,14 +317,27 @@ class HardwareService {
     }
     const hardware = await DeviceInfo.getHardware();
     const model = DeviceInfo.getModel();
-    const socModel = await this.fetchSoCModel();
-    const vendor = this.detectAndroidVendor(hardware.toLowerCase(), model, socModel);
+    const buildInfo = await this.fetchAndroidBuildInfo();
+    const socModel = buildInfo.socModel || await this.fetchSoCModel();
+    const vendor = this.detectAndroidVendor({
+      libraryHardware: hardware.toLowerCase(),
+      model,
+      socModel,
+      buildInfo,
+    });
     const qnnVariant = vendor === 'qualcomm' ? await this.getQnnVariantFromSoC(socModel) : undefined;
-    const exynosVariant = vendor === 'exynos' ? await this.getExynosVariantFromSoC(socModel) : undefined;
+    const exynosVariant = vendor === 'exynos'
+      ? this.inferExynosVariantFromHints({
+        socModel,
+        model,
+        buildInfo,
+        libraryHardware: hardware.toLowerCase(),
+      })
+      : undefined;
     const exynosNpuAvailable = vendor === 'exynos' ? await this.isExynosNpuRuntimeAvailable() : undefined;
     // Exynos Maia NPU has no public SDK — hasNPU stays false; GPU tier drives OpenCL path
-    const exynosGpuTier = exynosVariant === 'exynos2400' ? 'mali-g720'
-      : exynosVariant === 'exynos2200' ? 'mali-g615'
+    const exynosGpuTier = exynosVariant === 'exynos2400' ? 'xclipse-940'
+      : exynosVariant === 'exynos2200' ? 'xclipse-920'
       : exynosVariant ? 'unknown' as const
       : undefined;
     this.cachedSoCInfo = {
@@ -272,10 +361,20 @@ class HardwareService {
 
   private async fetchSoCModel(): Promise<string> {
     try {
-      const localDream = getLocalDreamModule();
-      if (localDream?.getSoCModel) return await localDream.getSoCModel();
+      const module = getAndroidHardwareModule();
+      if (module?.getSoCModel) return await module.getSoCModel();
     } catch { /* native module unavailable */ }
     return '';
+  }
+
+  private async fetchAndroidBuildInfo(): Promise<AndroidBuildInfo> {
+    try {
+      const module = getAndroidHardwareModule();
+      if (!module?.getAndroidBuildInfo) return {};
+      return await module.getAndroidBuildInfo();
+    } catch {
+      return {};
+    }
   }
 
   private async isExynosNpuRuntimeAvailable(): Promise<boolean> {
@@ -308,19 +407,14 @@ class HardwareService {
     return match?.variant;
   }
 
-  private async getExynosVariantFromSoC(
-    socModelOverride?: string,
-  ): Promise<'exynos2400' | 'exynos2200' | 'exynos2100' | undefined> {
-    const socModel = socModelOverride || await this.fetchSoCModel();
-    if (!socModel) return undefined;
-    return this.classifyExynosVariant(socModel);
-  }
-
   private getExynosImageRec(socInfo: SoCInfo): ImageModelRecommendation {
-    // Mali-G720 (Exynos 2400 / Galaxy S24) supports OpenCL 3.0 for LLM GPU acceleration.
+    // Exynos 2400 uses Samsung Xclipse 940. The app routes chat to OpenCL when the
+    // device is identified correctly; SD image generation remains CPU/MNN unless
+    // a dedicated Exynos NPU runtime is present.
     // SD subprocess does not ship OpenCL/Vulkan — image gen stays on MNN CPU for all Exynos.
-    const label = socInfo.exynosVariant === 'exynos2400' ? 'Exynos 2400 (Mali-G720)'
-      : socInfo.exynosVariant === 'exynos2200' ? 'Exynos 2200' : 'Exynos';
+    const label = socInfo.exynosVariant === 'exynos2400' ? 'Exynos 2400 (Xclipse 940)'
+      : socInfo.exynosVariant === 'exynos2200' ? 'Exynos 2200 (Xclipse 920)'
+      : 'Exynos';
     if (socInfo.exynosNpuAvailable) {
       return {
         recommendedBackend: 'one',
@@ -328,7 +422,7 @@ class HardwareService {
         compatibleBackends: ['one', 'mnn'],
       };
     }
-    if (socInfo.exynosGpuTier === 'mali-g720') {
+    if (socInfo.exynosGpuTier === 'xclipse-940') {
       return {
         recommendedBackend: 'mnn',
         bannerText: `${label} — chat uses GPU (OpenCL); image models use CPU (MNN)`,
@@ -377,6 +471,48 @@ class HardwareService {
     if (ramGB < 4) { rec.warning = 'Low RAM \u2014 expect slower performance'; }
     this.cachedImageRecommendation = rec;
     return rec;
+  }
+
+  getSoCDisplayName(socInfo: SoCInfo | null): string {
+    if (!socInfo) return 'Unknown';
+    if (socInfo.vendor === 'apple') return socInfo.appleChip ?? 'Apple Silicon';
+    if (socInfo.vendor === 'qualcomm') {
+      if (socInfo.qnnVariant === '8gen2') return 'Snapdragon 8 Gen 2+';
+      if (socInfo.qnnVariant === '8gen1') return 'Snapdragon 8 Gen 1';
+      if (socInfo.qnnVariant === 'min') return 'Snapdragon';
+      return 'Qualcomm Snapdragon';
+    }
+    if (socInfo.vendor === 'exynos') {
+      if (socInfo.exynosVariant === 'exynos2400') return 'Exynos 2400';
+      if (socInfo.exynosVariant === 'exynos2200') return 'Exynos 2200';
+      if (socInfo.exynosVariant === 'exynos2100') return 'Exynos 2100';
+      return 'Samsung Exynos';
+    }
+    if (socInfo.vendor === 'tensor') return 'Google Tensor';
+    if (socInfo.vendor === 'mediatek') return 'MediaTek';
+    return 'Unknown';
+  }
+
+  getGpuDisplayName(socInfo: SoCInfo | null): string {
+    if (!socInfo) return 'Unknown';
+    if (Platform.OS === 'ios') return 'Apple GPU';
+    if (socInfo.vendor === 'exynos') {
+      if (socInfo.exynosGpuTier === 'xclipse-940') return 'Samsung Xclipse 940';
+      if (socInfo.exynosGpuTier === 'xclipse-920') return 'Samsung Xclipse 920';
+      return 'Unknown Exynos GPU';
+    }
+    if (socInfo.vendor === 'qualcomm') return 'Adreno';
+    return 'CPU only';
+  }
+
+  getTextAccelerationDisplay(socInfo: SoCInfo | null, gpuEnabled: boolean): string {
+    if (Platform.OS === 'ios') {
+      return gpuEnabled ? 'Metal enabled' : 'Metal available';
+    }
+    if (socInfo?.vendor === 'exynos' && socInfo.exynosGpuTier === 'xclipse-940') {
+      return gpuEnabled ? 'OpenCL enabled' : 'OpenCL available (disabled in settings)';
+    }
+    return 'CPU only';
   }
 
   getDeviceTier(): 'low' | 'medium' | 'high' | 'flagship' {

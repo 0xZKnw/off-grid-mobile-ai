@@ -284,11 +284,11 @@ export function getGpuLayersForDevice(totalMemoryBytes: number, requestedLayers:
 }
 
 /** Returns baseline GPU layer count for the detected SoC.
- * Exynos 2400 (Mali-G720 MP12): OpenCL 3.0 — 99 layers. All other Android: CPU-only (0).
+ * Exynos 2400 (Xclipse 940): OpenCL path — 99 layers. All other Android: CPU-only (0).
  */
 export function getGpuLayersForSoC(socInfo: SoCInfo | null): number {
   if (Platform.OS === 'ios') return 99;
-  if (socInfo?.vendor === 'exynos' && socInfo.exynosGpuTier === 'mali-g720') return 99;
+  if (socInfo?.vendor === 'exynos' && socInfo.exynosGpuTier === 'xclipse-940') return 99;
   return DEFAULT_GPU_LAYERS;
 }
 

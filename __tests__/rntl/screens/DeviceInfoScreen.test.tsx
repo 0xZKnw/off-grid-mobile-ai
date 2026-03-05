@@ -8,7 +8,7 @@
  */
 
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react-native';
+import { render, fireEvent, waitFor } from '@testing-library/react-native';
 
 // Navigation is globally mocked in jest.setup.ts
 const mockGoBack = jest.fn();
@@ -39,6 +39,9 @@ jest.mock('../../../src/stores', () => ({
         systemVersion: '14',
         isEmulator: false,
       },
+      settings: {
+        enableGpu: true,
+      },
       themeMode: 'system',
     };
     return selector ? selector(state) : state;
@@ -49,6 +52,15 @@ jest.mock('../../../src/services', () => ({
   hardwareService: {
     getTotalMemoryGB: jest.fn(() => 8.0),
     getDeviceTier: jest.fn(() => 'high'),
+    getSoCInfo: jest.fn(() => Promise.resolve({
+      vendor: 'exynos',
+      hasNPU: false,
+      exynosVariant: 'exynos2400',
+      exynosGpuTier: 'xclipse-940',
+    })),
+    getSoCDisplayName: jest.fn(() => 'Exynos 2400'),
+    getGpuDisplayName: jest.fn(() => 'Samsung Xclipse 940'),
+    getTextAccelerationDisplay: jest.fn(() => 'OpenCL enabled'),
   },
 }));
 
@@ -99,6 +111,16 @@ describe('DeviceInfoScreen', () => {
   it('shows RAM', () => {
     const { getByText } = render(<DeviceInfoScreen />);
     expect(getByText('8.0 GB')).toBeTruthy();
+  });
+
+  it('shows resolved SoC and GPU details', async () => {
+    const { getByText } = render(<DeviceInfoScreen />);
+
+    await waitFor(() => {
+      expect(getByText('Exynos 2400')).toBeTruthy();
+      expect(getByText('Samsung Xclipse 940')).toBeTruthy();
+      expect(getByText('OpenCL enabled')).toBeTruthy();
+    });
   });
 
   it('shows device tier', () => {

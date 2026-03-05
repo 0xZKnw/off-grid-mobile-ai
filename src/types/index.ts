@@ -94,7 +94,7 @@ export interface SoCInfo {
   /** Samsung Exynos NPU variant — identifies the chip generation */
   exynosVariant?: 'exynos2400' | 'exynos2200' | 'exynos2100';
   /** Samsung Exynos GPU tier for OpenCL acceleration */
-  exynosGpuTier?: 'mali-g720' | 'mali-g615' | 'unknown';
+  exynosGpuTier?: 'xclipse-940' | 'xclipse-920' | 'unknown';
   /** True only when an Exynos-specific image runtime is actually available. */
   exynosNpuAvailable?: boolean;
   appleChip?: 'A14' | 'A15' | 'A16' | 'A17Pro' | 'A18';

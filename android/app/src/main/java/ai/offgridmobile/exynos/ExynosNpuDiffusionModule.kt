@@ -108,6 +108,21 @@ class ExynosNpuDiffusionModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun getAndroidBuildInfo(promise: Promise) {
+        val map = Arguments.createMap().apply {
+            putString("socModel", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SOC_MODEL else "")
+            putString("socManufacturer", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SOC_MANUFACTURER else "")
+            putString("hardware", Build.HARDWARE ?: "")
+            putString("board", Build.BOARD ?: "")
+            putString("product", Build.PRODUCT ?: "")
+            putString("device", Build.DEVICE ?: "")
+            putString("manufacturer", Build.MANUFACTURER ?: "")
+            putString("model", Build.MODEL ?: "")
+        }
+        promise.resolve(map)
+    }
+
+    @ReactMethod
     fun addListener(eventName: String) {
         // Required for RN event emitter compatibility.
     }
